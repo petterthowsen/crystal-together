@@ -8,12 +8,14 @@ require "./chat/*"
 require "./embed/*"
 require "./finetune/*"
 require "./finetune/create/*"
+require "./audio/speech/*"
 
 module Together
 
 	# Main client class for interacting with Together.ai API
   class Client
-    BASE_URL = "https://api.together.ai/v1"
+    # Base URL for the Together.ai API
+    BASE_URL = "https://api.together.xyz/v1"
 
     property api_key : String
 
@@ -70,9 +72,39 @@ module Together
       Finetune::Create::Response.from_json(response.body)
     end
 
+    def speech(
+      model : String,
+      input : String,
+      voice : String,
+      response_format : String? = "wav",
+      language : String? = "en",
+      response_encoding : String? = "pcm_f32le",
+      sample_rate : Int32? = 44100,
+      stream : Bool? = false
+    ) : Audio::Speech::Response
+      request = Audio::Speech::Request.new(
+        model: model,
+        input: input,
+        voice: voice,
+        response_format: response_format,
+        language: language,
+        response_encoding: response_encoding,
+        sample_rate: sample_rate,
+        stream: stream
+      )
+      response = execute(request)
+      Audio::Speech::Response.from_json(response.body)
+    end
+
     # Execute a request
     def execute(request : Request)
-      response = self.request(request.method, request.endpoint, request.body, request.query_params)
+      response = self.request(
+        request.method,
+        request.endpoint,
+        request.body,
+        request.query_params,
+        request.headers
+      )
       handle_response(response)
     end
 
@@ -93,23 +125,30 @@ module Together
     end
 
     # Send a request to the Together.ai API
-    private def request(method : String, endpoint : String, body : String? = nil, query_params : Hash(String, String)? = nil)
-      method = method.upcase
-
-      # Build headers
-      headers = HTTP::Headers.new
-      headers["Authorization"] = "Bearer #{@api_key}"
-      headers["Content-Type"] = "application/json"
-      
-      # Build URL with query parameters
-      uri = URI.parse("#{BASE_URL}#{endpoint}")
+    private def request(
+      method : String,
+      endpoint : String,
+      body : String?,
+      query_params : Hash(String, String)?,
+      headers : Hash(String, String)
+    ) : HTTP::Client::Response
+      url = "#{BASE_URL}#{endpoint}"
       if query_params && !query_params.empty?
-        uri.query = URI::Params.encode(query_params)
+        url += "?#{HTTP::Params.encode(query_params)}"
       end
 
-      HTTP::Client.new(uri) do |client|
-        client.exec(method, uri.request_target, headers: headers, body: body)
-      end
+      headers = headers.merge({
+        "Authorization" => "Bearer #{@api_key}"
+      })
+
+      HTTP::Client.exec(
+        method: method,
+        url: url,
+        body: body,
+        headers: HTTP::Headers.new.tap { |h|
+          headers.each { |k, v| h[k] = v }
+        }
+      )
     end
   end
 end
